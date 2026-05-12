@@ -1,0 +1,32 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy  # Waits for the healthcheck to pass
+
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: felipe
+      POSTGRES_PASSWORD: 12345
+      POSTGRES_DB: WeatherApp
+    volumes:
+      # CHANGE THIS LINE: Remove the "/data" suffix
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U felipe -d WeatherApp" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
