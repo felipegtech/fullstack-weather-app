@@ -24,6 +24,8 @@ from models import Base, Favorite, SearchHistory, User
 from models import Base, SearchHistory, Favorite
 from database import engine, get_db
 
+from fastapi.middleware.cors import CORSMiddleware
+
 # Create tables on startupp
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -33,6 +35,14 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
 
 app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # Pyndatic models for incoming data validation
 class UserCreate(BaseModel):
     username: str
@@ -82,7 +92,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
         raise HTTPException(status_code=400, detail="Incorrect username or password")
 
     # 3. Create the JWT token, baking the user's ID inside the "sub" (subject) claim
-    access_token = create_access_token(data={"sub": user.id})
+    access_token = create_access_token(data={"sub": str(user.id)})
 
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -99,14 +109,16 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        # 1. Decode the token using your secret key
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-
-        # 2. Extract the user ID (which we stored in the "sub" claim)
-        user_id: int(payload.get("sub"))
-        if user_id is None:
+        print(f"DEBUG: RAW PAYLOAD IS -> {payload}")
+        sub_val = payload.get("sub")
+        print(f"DEBUG: SUB VALUE IS -> {sub_val} (TYPE: {type(sub_val)})")
+        if sub_val is None:
             raise credentials_exception
-    except InvalidTokenError:
+        user_id = int(sub_val)
+        print(f"DEBUG: PARSED USER_ID IS -> {user_id}")
+    except Exception as e:
+        print(f"DEBUG: CRASH INSIDE JWT BLOCK -> {str(e)}")
         raise credentials_exception
 
     # 3. Lool up the user in the database
@@ -194,6 +206,9 @@ async def add_favorite(
         new_favorite = Favorite(user_id=current_user.id, city=city)
         db.add(new_favorite)
         await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        return {"message": f"{city} ya está en tus favoritos!"}
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=400, detail="No se pudo guardar al favorito")
@@ -206,7 +221,7 @@ async def get_favorites(
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
-    query = select(Favorite).where(Favorite.user.id == current_user.id)
+    query = select(Favorite).where(Favorite.user_id == current_user.id)
     result = await db.execute(query)
     favorites = result.scalars().all()
 
@@ -221,7 +236,7 @@ async def remove_favorite(
         current_user: User = Depends(get_current_user)
 ):
     # Delete where the user is 1 AND the city matches the URL parameter
-    query = delete(Favorite).where(Favorite.user.id == current_user.id, Favorite.city == city)
+    query = delete(Favorite).where(Favorite.user_id == current_user.id, Favorite.city == city)
     result = await db.execute(query)
 
     # result.rowcount tells us how many rows were deleted
@@ -252,4 +267,6 @@ async def get_history(
     history = result.scalars().all()
 
     return {"history": [{"city": record.city, "searched_at": record.searched_at} for record in history]}
+
+
 

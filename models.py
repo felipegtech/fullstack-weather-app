@@ -1,6 +1,6 @@
 from typing import List
 
-from sqlalchemy import String, ForeignKey, DateTime
+from sqlalchemy import String, ForeignKey, DateTime, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 from datetime import datetime
@@ -17,6 +17,7 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(50), unique=True)
     email: Mapped[str] = mapped_column(String(100), unique=True)
     password_hash:  Mapped[str] = mapped_column(String(100))
+    telegram_chat_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # These relationships allo u to easily fetch a user's history or favorites
     favorites: Mapped[List["Favorite"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -42,6 +43,10 @@ class Favorite(Base):
     city: Mapped[str] = mapped_column(String(50))
 
     user: Mapped["User"] = relationship(back_populates="favorites")
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'city', name='unique_user_city'),
+    )
 
 
 
